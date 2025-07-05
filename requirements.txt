@@ -1,0 +1,9 @@
+pipecat-ai[silero, google]
+fastapi
+uvicorn
+python-dotenv
+loguru
+# google-generativeai~=0.8.3
+twilio
+boto3
+google-genai
