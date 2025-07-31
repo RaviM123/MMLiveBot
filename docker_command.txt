@@ -1,0 +1,1 @@
+us-central1-docker.pkg.dev/prefab-passage-464916-d0/cloud-run-deployment
