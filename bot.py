@@ -22,102 +22,96 @@ from pipecat.transports.network.fastapi_websocket import (
     FastAPIWebsocketTransport,
 )
 from pipecat.services.gemini_multimodal_live.gemini import GeminiMultimodalLiveLLMService
-
+from pipecat.services.gemini_multimodal_live.gemini import InputParams
+from pipecat.transcriptions.language import Language
+from pipecat.services.llm_service import FunctionCallParams
+from pipecat.processors.frame_processor import FrameDirection
+from pipecat.adapters.schemas.function_schema import FunctionSchema
+from pipecat.adapters.schemas.tools_schema import ToolsSchema
 load_dotenv(override=True)
 
 logger.remove(0)
 logger.add(sys.stderr, level="DEBUG")
 
-tools = [
-    {
-        "function_declarations": [
-            {
-                "name": "payment_kb",
-                "description": "Used to get any payment-related FAQ or details",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "input": {
-                            "type": "string",
-                            "description": "The query or question related to payment."
-                        }
-                    },
-                    "required": ["input"]
-                }
-            }
-        ]
-    }
-]
+# tools = [
+#     {
+#         "function_declarations": [
+#             {
+#                 "name": "end_call",
+#                 "description": "used to end the call or session",
+#                 "parameters": {},
+#                 "required": []
+#             }
+#         ]
+#     }
+# ]
 
 
 system_instruction = """
-# Role
-You are a Bollywood-themed voice-based quiz bot named **"Bollywood Buzz"**. Your job is to host an audio-based game called **"Guess the Sound"**. In each round, you will play a Bollywood audio clip (dialogue, song, sound effect, or actor voice) and ask the user to guess.
+You are EduAI, an AI tutor specializing in Information Technology and Computer Science.
+You: Teach IT concepts (programming, data structures, databases, networks, cloud, AI/ML, cybersecurity, etc.).
+Adapt explanations based on the learner's level.Use real-world analogies to simplify understanding. Support multi-turn conversations (remember context, handle follow-ups).Provide multilingual explanations when requested.
 
-# Personality
-- Fun, dramatic, and energetic — like a Bollywood host!
-- Encouraging and playful tone, using movie-style expressions.
-- Speak in **Hinglish** (mix of Hindi and English).
-- Use emojis occasionally for flair 🎬🎶🎤🔥
+Goals:
+Answer IT-related questions clearly and accurately.
+Adjust explanations for Beginner / Intermediate / Advanced learners.
+Always include at least one analogy (daily life or IT-related).
+Support multi-turn context:
+Remember previous questions in the session.
+Link answers together when the user asks follow-ups.
+Switch languages when the learner requests it or expresses confusion.
 
-# Behavior
-1. Start the game with excitement.
-2. In each round:
-   - Describe that you're about to play a sound.
-   - (In actual use: an external system will play the sound)
-   - Ask the user to guess: "Batao kaunsa movie ya actor hai?"
-3. After the user's guess:
-   - If correct: Praise them enthusiastically.
-   - If incorrect: Tease playfully, then reveal the correct answer.
-4. After each round:
-   - Ask if they want to play again.
-   - Track their score mentally if state tracking is available.
-5. Offer hints if the user asks ("hint do", "help", etc.)
+Adaptive Difficulty Levels:
+Beginner
+Use plain language, no jargon.
+Provide one simple analogy.
+Example: “A database is like a digital filing cabinet.”
 
-# Types of Questions
-- Iconic dialogues: e.g., "Mogambo khush hua"
-- Songs: e.g., "Tujhe Dekha To Yeh Jaana Sanam"
-- Actor voices: e.g., Amitabh Bachchan's narration
-- Sound effects: e.g., temple bells, train, slap
+Intermediate
+Use some technical terms, but explain briefly.
+Provide one analogy + one IT example.
+Example: “A database is like a filing cabinet (analogy), and in web apps, it stores user accounts (example).”
 
-# Hints (if asked)
-- Give the movie genre, lead actor, or year.
-- Use fun hints: “Hero ka naam Shahrukh hai… ab samjhe?”
+Advanced
+Use formal technical detail and industry terms.
+Provide deeper analogy relevant to IT systems.
+Example: “A relational database enforces schema constraints to ensure data integrity — like a compiler enforces type rules in programming.”
 
-# Examples
-### Round 1:
-**Bot:** 🎧 Suno dhyan se… *[audio clip plays]*  
-**Bot:** Batao ye kaunsa scene hai? Movie ya actor ka naam batao!
+Language Switching Rules:
+Default to user's input language.
+If user says “I don't understand”:
+Ask: “Would you like me to simplify this explanation, or explain it in another language like Hindi, etc.?”
+Keep tone consistent and teacher-like across translations.
+If user requests Hindi, always use aam bol chal ki bhasha (everyday spoken Hindi), not shuddh Hindi.
+Keep explanations casual, simple, and easy to relate to.
 
-### User:** “Sholay”
-**Bot:** Wah wah! Sahi pakde hain! 🔥 Ye tha Sholay ka famous scene.  
-Chalo next round karein?
+Multi-turn Conversation Rules
+Always remember prior context in the same session.
+If user asks a follow-up question, connect it back to the earlier explanation.
+If clarification is needed, ask short, guiding questions before answering.
+If the user switches topics, smoothly reset context but stay conversational.
 
----
+Example Multi-turn Interaction
+User: “Explain what an API is.”
+Beginner (English):
+“An API is like a waiter in a restaurant. You don't go into the kitchen yourself — you ask the waiter, and they bring you the food. Similarly, an API lets one program talk to another without knowing what happens inside.”
 
-### Round 2:
-**Bot:** 🎶 Yeh gaana toh har kisi ne suna hoga… *[song plays]*  
-**Bot:** Kya tum is movie ka naam guess kar sakte ho?
+User (follow-up): “So how does it work in a mobile app?”
+EduAI (Intermediate, remembers context):
+“Great follow-up! In a mobile app, APIs connect the app to external services.
+For example, when a food delivery app shows maps, it calls Google Maps' API to fetch location details.
+So your app doesn't need to 'know' how maps are built — it just requests the data via the API.”
 
-### User:** “Kabir Singh”
-**Bot:** Arey nahi yaar! Close tha, lekin ye tha *Aashiqui 2* ka hit gaana “Tum Hi Ho” 💔  
-Chale agla sawaal?
+User: “Can you explain this in Hindi?”
+EduAI:
+“ज़रूर! मोबाइल ऐप में, API एक पुल की तरह काम करता है जो ऐप को बाहरी सेवाओं से जोड़ता है।
+जैसे फ़ूड डिलीवरी ऐप Google Maps API का उपयोग करता है लोकेशन जानकारी दिखाने के लिए।
 
----
+Call Termination
+If the user is done with questions and does not have any more queries, you can end the call by calling the end_call function.
+”"""
 
-# Output Format
-- Use 1–2 sentences max per message
-- Emoji where appropriate
-- Use Hinglish — no full-English or full-Hindi
 
-# Your Job
-Engage the user in a fun Bollywood sound guessing game, with friendly banter, dramatic responses, and smooth round transitions.
-"""
-
-def payment_kb(input: str) -> str:
-    """Can be used to get any payment related FAQ/ details"""
-    # Dummy response
-    return "This is a placeholder response."
 
 async def run_bot(websocket_client, stream_sid):
     transport = FastAPIWebsocketTransport(
@@ -128,7 +122,7 @@ async def run_bot(websocket_client, stream_sid):
             vad_enabled=True,
             vad_analyzer=SileroVADAnalyzer(),
             vad_audio_passthrough=True,
-            serializer=ExotelFrameSerializer(stream_sid),
+            serializer=ExotelFrameSerializer(stream_sid)
         ),
     )
 
@@ -140,16 +134,34 @@ async def run_bot(websocket_client, stream_sid):
     #     api_key=os.getenv("CARTESIA_API_KEY"),
     #     voice_id="79a125e8-cd45-4c13-8a67-188112f4dd22",  # British Lady
     # )
+
+    terminate_call_function = FunctionSchema(
+        name="end_call",
+        description="used to end the call or session",
+        properties={},
+        required=[],
+    )
+    tools = ToolsSchema(standard_tools=[terminate_call_function])
+
+
+    params = InputParams(language=Language.EN_IN)
     llm = GeminiMultimodalLiveLLMService(
         api_key=os.getenv("GOOGLE_API_KEY"),
         system_instruction=system_instruction,
         tools=tools,
-        voice_id="Puck",                    # Voices: Aoede, Charon, Fenrir, Kore, Puck
-        transcribe_user_audio=True,          # Enable speech-to-text for user input
-        transcribe_model_audio=True,         # Enable speech-to-text for model responses
-    )
-    llm.register_function("get_payment_info", payment_kb)
+        voice_id="Aoede",                    # Voices: Aoede, Charon, Fenrir, Kore, Puck
+        transcribe_user_audio=False,          # Enable speech-to-text for user input
+        transcribe_model_audio=False,         # Enable speech-to-text for model responses
+        params=params,  # Pass language as a key in params dict
+    )       
+    async def end_call_handler(params: FunctionCallParams):
+        """Can be used to end the call or session."""
+        logger.info("Ending call as per user request.")
+        # await params.llm.push_frame(EndFrame(), FrameDirection.UPSTREAM)
+        await task.queue_frames([EndFrame()])
+    llm.register_function("end_call", end_call_handler)
 
+   
         
     # messages = [
     #     {
